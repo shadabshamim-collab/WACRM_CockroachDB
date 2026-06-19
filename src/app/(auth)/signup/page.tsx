@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,7 @@ export default function SignupPage() {
 }
 
 function SignupPageInner() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   // When the user lands here from `/join/<token>` we carry the
   // invite token in the query so it survives the signup → email
@@ -80,51 +81,17 @@ function SignupPageInner() {
         return
       }
 
-      setSuccess(true)
-      setLoading(false)
+      // Auto-redirect to dashboard after signup (email verification skipped for now)
+      if (inviteToken) {
+        router.push(`/join/${encodeURIComponent(inviteToken)}`)
+      } else {
+        router.push('/dashboard')
+      }
     } catch (err) {
       setError('An error occurred during signup')
       setLoading(false)
     }
   };
-
-  if (success) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
-        <Card className="w-full max-w-md border-slate-800 bg-slate-900">
-          <CardHeader className="items-center text-center">
-            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-              <CheckCircle className="h-6 w-6 text-primary" />
-            </div>
-            <CardTitle className="text-xl text-white">
-              Check your email
-            </CardTitle>
-            <CardDescription className="text-slate-400">
-              We&apos;ve sent a confirmation link to{" "}
-              <span className="text-white">{email}</span>. Please check your
-              inbox and click the link to verify your account.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link
-              href={
-                inviteToken
-                  ? `/login?invite=${encodeURIComponent(inviteToken)}`
-                  : "/login"
-              }
-            >
-              <Button
-                variant="outline"
-                className="w-full border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
-              >
-                Back to sign in
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
