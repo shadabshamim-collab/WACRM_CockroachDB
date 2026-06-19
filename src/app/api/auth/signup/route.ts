@@ -51,8 +51,9 @@ export async function POST(request: NextRequest) {
 
     // Insert profile (user)
     const nameParts = fullName.split(" ");
-    await db.from("profiles").insert({
+    const profileInsert = await db.from("profiles").insert({
       id: userId,
+      user_id: userId,
       account_id: accountId,
       email,
       first_name: nameParts[0],
@@ -60,6 +61,8 @@ export async function POST(request: NextRequest) {
       password_hash: password, // In production, hash this with bcrypt
       created_at: new Date().toISOString(),
     });
+
+    console.log("[/api/auth/signup] Profile insert result:", JSON.stringify(profileInsert, null, 2));
 
     // Generate JWT token
     const token = jwt.sign(

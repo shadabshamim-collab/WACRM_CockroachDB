@@ -22,12 +22,17 @@ export async function POST(request: NextRequest) {
       .eq("email", email)
       .maybeSingle();
 
+    console.log("[/api/auth/login] Query result:", JSON.stringify(profile, null, 2));
+
     if (!profile.data) {
+      console.log("[/api/auth/login] Profile not found for email:", email);
       return NextResponse.json(
         { error: "Invalid email or password" },
         { status: 401 }
       );
     }
+
+    console.log("[/api/auth/login] Profile found:", { id: profile.data.id, email: profile.data.email });
 
     // In production, use bcrypt.compare() instead of plain comparison
     if (profile.data.password_hash !== password) {
