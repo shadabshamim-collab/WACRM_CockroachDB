@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@/lib/cockroachdb/server";
 import type { Message, Conversation } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 

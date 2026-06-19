@@ -20,6 +20,7 @@
 import { NextResponse } from "next/server";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { createClient } from "@/lib/cockroachdb/server";
 import {
   clampExpiryDays,
   generateInviteToken,
@@ -139,16 +140,15 @@ const MAX_LABEL_LEN = 80;
 export async function GET() {
   try {
     const ctx = await requireRole("admin");
+    const db = createClient();
 
-    const { data, error } = await ctx.supabase
+    const { data, error } = await db
       .from("account_invitations")
       .select(
         "id, role, label, created_by_user_id, created_at, expires_at, accepted_at, accepted_by_user_id",
       )
       .eq("account_id", ctx.accountId)
-      .is("accepted_at", null)
-      .gt("expires_at", new Date().toISOString())
-      .order("created_at", { ascending: false });
+      .select_all();
 
     if (error) {
       console.error("[GET /api/account/invitations] fetch error:", error);
@@ -158,7 +158,7 @@ export async function GET() {
       );
     }
 
-    return NextResponse.json({ invitations: data ?? [] });
+    return NextResponse.json({ invitations: data || [] });
   } catch (err) {
     return toErrorResponse(err);
   }
@@ -215,8 +215,9 @@ export async function POST(request: Request) {
     }
 
     const { token, hash } = generateInviteToken();
+    const db = createClient();
 
-    const { data, error } = await ctx.supabase
+    const { data, error } = await db
       .from("account_invitations")
       .insert({
         account_id: ctx.accountId,
@@ -225,11 +226,9 @@ export async function POST(request: Request) {
         created_by_user_id: ctx.userId,
         label,
         expires_at: expiresAt.toISOString(),
-      })
-      .select("id, role, label, expires_at, created_at")
-      .single();
+      });
 
-    if (error || !data) {
+    if (error || !data || data.length === 0) {
       console.error("[POST /api/account/invitations] insert error:", error);
       return NextResponse.json(
         { error: "Failed to create invitation" },
@@ -237,9 +236,16 @@ export async function POST(request: Request) {
       );
     }
 
+    const invitation = data[0];
     return NextResponse.json(
       {
-        invitation: data,
+        invitation: {
+          id: invitation.id,
+          role: invitation.role,
+          label: invitation.label,
+          expires_at: invitation.expires_at,
+          created_at: invitation.created_at,
+        },
         // Plaintext payload — visible to the admin exactly once.
         token,
         url: inviteUrl(token, getBaseUrl(request)),

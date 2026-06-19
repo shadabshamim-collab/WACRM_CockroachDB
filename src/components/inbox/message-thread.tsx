@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@/lib/cockroachdb/server";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import type {

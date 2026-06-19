@@ -9,8 +9,6 @@ import {
   useMemo,
   type ReactNode,
 } from "react";
-import { createClient } from "@/lib/supabase/client";
-import type { User } from "@supabase/supabase-js";
 import { DEFAULT_CURRENCY } from "@/lib/currency";
 import {
   canEditSettings as canEditSettingsFor,
@@ -19,6 +17,11 @@ import {
   isAccountRole,
   type AccountRole,
 } from "@/lib/auth/roles";
+
+interface User {
+  id: string;
+  email: string;
+}
 
 interface Profile {
   id: string;
@@ -125,47 +128,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // refreshProfile() callback. Reads the current session's user id and
   // pulls the matching profile row along with its account summary.
   const fetchProfile = useCallback(async (userId: string) => {
-    const supabase = createClient();
     setProfileLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select(
-          // `account:accounts!inner(id, name)` — explicit join on the
-          // single FK profiles.account_id → accounts.id. `!inner` so a
-          // missing account collapses to null rather than a half-
-          // populated row (shouldn't happen post-017 NOT NULL, but
-          // belt-and-braces against forks running older schemas).
-          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, account:accounts!inner(id, name, default_currency)",
-        )
-        .eq("user_id", userId)
-        .maybeSingle();
+      const response = await fetch("/api/auth/profile", {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
 
-      if (error) {
-        console.error("[AuthProvider] fetchProfile error:", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-        });
+      if (!response.ok) {
+        console.error("[AuthProvider] fetchProfile error:", response.status);
         return;
       }
 
-      if (data) {
-        // Supabase's typed client surfaces an embedded `!inner` row
-        // as either an object or a single-element array depending on
-        // the schema's inferred cardinality — normalise to the object
-        // form before reading.
-        const accountRaw = Array.isArray(data.account)
-          ? data.account[0] ?? null
-          : (data.account as {
-              id: string;
-              name: string;
-              default_currency: string | null;
-            } | null);
-        // Narrow default_currency defensively: forks running pre-021
-        // schemas won't have the column, so a missing/null value reads
-        // as the safe USD fallback rather than crashing the picker.
+      const data = await response.json();
+
+      if (data && data.profile) {
+        const accountRaw = data.account;
         const accountRow: AccountSummary | null = accountRaw
           ? {
               id: accountRaw.id,
@@ -174,27 +152,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           : null;
 
-        // Narrow the DB enum into our AccountRole union. The DB
-        // constraint should make this unconditional, but a future
-        // migration that broadens the enum without updating TS would
-        // otherwise crash here — fall back to null and let UI gates
-        // treat the caller as least-privileged.
-        const accountRole = isAccountRole(data.account_role)
-          ? data.account_role
+        const accountRole = isAccountRole(data.profile.account_role)
+          ? data.profile.account_role
           : null;
 
         setProfile({
-          id: data.id,
-          full_name: data.full_name,
-          email: data.email,
-          avatar_url: data.avatar_url,
-          role: data.role,
-          // `beta_features` is `NOT NULL DEFAULT ARRAY[]` in the DB, but
-          // narrow defensively in case the column hasn't been migrated yet
-          // (older deployments running 011 lazily) — `null` reads as no
-          // opt-ins, which is the safe default for any future beta gate.
-          beta_features: data.beta_features ?? [],
-          account_id: data.account_id ?? null,
+          id: data.profile.id,
+          full_name: data.profile.full_name,
+          email: data.profile.email,
+          avatar_url: data.profile.avatar_url,
+          role: data.profile.role,
+          beta_features: data.profile.beta_features ?? [],
+          account_id: data.profile.account_id ?? null,
           account_role: accountRole,
         });
         setAccount(accountRow);
@@ -207,7 +176,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const supabase = createClient();
     let mounted = true;
 
     const safetyTimer = setTimeout(() => {
@@ -220,27 +188,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const init = async () => {
       try {
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession();
-
-        if (error) console.error("[AuthProvider] getSession error:", error.message);
+        const response = await fetch("/api/auth/user", {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        });
 
         if (!mounted) return;
-        const currentUser = session?.user ?? null;
-        setUser(currentUser);
 
-        if (currentUser) {
-          // Don't block session loading on profile fetch — chrome
-          // (header, sidebar) can render from the user object alone,
-          // profile enriches async. Callers that need to branch on
-          // profile data gate on `profileLoading` instead.
-          fetchProfile(currentUser.id);
+        if (response.ok) {
+          const data = await response.json();
+          const currentUser = data.user ?? null;
+          setUser(currentUser);
+
+          if (currentUser) {
+            fetchProfile(currentUser.id);
+          } else {
+            setProfileLoading(false);
+          }
         } else {
-          // No user → no profile to load. Flip profileLoading off so
-          // pages that gate on it don't wait forever on the logged-out
-          // path (the route guard or redirect should fire instead).
           setProfileLoading(false);
         }
       } catch (err) {
@@ -253,38 +218,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     init();
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mounted) return;
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-
-      if (currentUser) {
-        fetchProfile(currentUser.id);
-      } else {
-        setProfile(null);
-        setAccount(null);
-        setProfileLoading(false);
-      }
-
-      setLoading(false);
-    });
-
     return () => {
       mounted = false;
       clearTimeout(safetyTimer);
-      subscription.unsubscribe();
     };
   }, [fetchProfile]);
 
   const signOut = useCallback(async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    setUser(null);
-    setProfile(null);
-    setAccount(null);
-    window.location.href = "/login";
+    try {
+      await fetch("/api/auth/signout", { method: "POST" });
+    } catch (err) {
+      console.error("[AuthProvider] signOut error:", err);
+    } finally {
+      setUser(null);
+      setProfile(null);
+      setAccount(null);
+      window.location.href = "/login";
+    }
   }, []);
 
   const refreshProfile = useCallback(async () => {

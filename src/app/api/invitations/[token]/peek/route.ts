@@ -29,7 +29,7 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from "@/lib/rate-limit";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/cockroachdb/server";
 
 /**
  * Best-effort client IP. The `x-forwarded-for` header is what

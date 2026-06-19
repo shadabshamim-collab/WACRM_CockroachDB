@@ -18,6 +18,7 @@ import {
   getCurrentAccount,
   toErrorResponse,
 } from "@/lib/auth/account";
+import { createClient } from "@/lib/cockroachdb/server";
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -81,12 +82,11 @@ export async function PATCH(request: Request) {
     // RLS allows this UPDATE because accounts_update requires
     // `is_account_member(id, 'admin')`, and requireRole already
     // guaranteed the caller is admin+.
-    const { data, error } = await ctx.supabase
+    const db = createClient();
+    const { data, error } = await db
       .from("accounts")
-      .update({ name })
       .eq("id", ctx.accountId)
-      .select("id, name")
-      .single();
+      .update({ name });
 
     if (error) {
       console.error("[PATCH /api/account] update error:", error);

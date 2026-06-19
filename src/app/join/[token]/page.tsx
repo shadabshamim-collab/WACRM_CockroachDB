@@ -51,7 +51,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/cockroachdb/server';
 
 interface PeekOk {
   ok: true;

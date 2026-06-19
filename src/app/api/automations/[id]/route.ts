@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/cockroachdb/server'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import {
   loadStepsTree,
@@ -107,8 +107,8 @@ export async function PATCH(
   if (Object.keys(update).length > 0) {
     const { error: updErr } = await admin
       .from('automations')
-      .update(update)
       .eq('id', id)
+      .update(update)
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
   }
 
@@ -130,9 +130,9 @@ export async function DELETE(
 
   const { error } = await supabaseAdmin()
     .from('automations')
-    .delete()
     .eq('id', id)
     .eq('user_id', user.id)
+    .delete()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true })
 }

@@ -19,9 +19,10 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
-import type { PostgrestError } from "@supabase/supabase-js";
+import type { PostgrestError } from "@/lib/cockroachdb/server";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { createClient, query } from "@/lib/cockroachdb/server";
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -81,11 +82,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const { error } = await ctx.supabase.rpc("transfer_account_ownership", {
-      p_new_owner_user_id: newOwnerUserId,
-    });
-
-    if (error) return rpcErrorToResponse(error);
+    try {
+      await query("SELECT transfer_account_ownership($1)", [newOwnerUserId]);
+    } catch (error) {
+      console.error("[transfer-ownership] RPC error:", error);
+      return NextResponse.json(
+        { error: "Failed to transfer ownership" },
+        { status: 500 },
+      );
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {

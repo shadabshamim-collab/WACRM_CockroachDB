@@ -4,7 +4,7 @@
 // trip and verifies role on demand.
 //
 // IMPORTANT: this module is server-only. It imports the Supabase
-// SSR client (`@/lib/supabase/server`), which reads `next/headers`
+// SSR client (`@/lib/cockroachdb/server`), which reads `next/headers`
 // cookies. Importing it from a client component will fail at
 // build time with the standard Next.js "You're importing a
 // component that needs `next/headers`" error — that's the
@@ -26,9 +26,10 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { headers as getHeaders } from "next/headers";
+import jwt from "jsonwebtoken";
 
-import { createClient } from "@/lib/supabase/server";
+import { createClient, CockroachDBClient } from "@/lib/cockroachdb/server";
 import { hasMinRole, isAccountRole, type AccountRole } from "./roles";
 
 // ------------------------------------------------------------
@@ -79,9 +80,7 @@ export function toErrorResponse(err: unknown): NextResponse {
 // ------------------------------------------------------------
 
 export interface AccountContext {
-  /** Supabase SSR client, RLS scoped to the calling user. */
-  supabase: SupabaseClient;
-  /** `auth.uid()` for the caller. Always defined when this resolves. */
+  /** User ID from JWT token. Always defined when this resolves. */
   userId: string;
   /** Caller's account_id from their profile row. */
   accountId: string;
@@ -92,9 +91,28 @@ export interface AccountContext {
 }
 
 /**
+ * Extract user ID from JWT token in Authorization header.
+ */
+async function extractUserIdFromToken(): Promise<string | null> {
+  const headersList = await getHeaders();
+  const authHeader = headersList.get("authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || "") as { userId: string };
+    return decoded.userId;
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
  * Resolve the caller's user + account + role in one round trip.
  *
- * Throws `UnauthorizedError` if there's no Supabase session.
+ * Throws `UnauthorizedError` if there's no valid JWT token.
  * Throws `ForbiddenError` if the profile is missing account
  * fields (shouldn't happen post-017 migration; defensive guard
  * against profile rows that pre-date the backfill or were
@@ -104,54 +122,45 @@ export interface AccountContext {
  * minimum-role check — it's a thin wrapper over this.
  */
 export async function getCurrentAccount(): Promise<AccountContext> {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
-  if (userErr || !user) {
+  const userId = await extractUserIdFromToken();
+  if (!userId) {
     throw new UnauthorizedError();
   }
 
-  // Selecting through the FK gives us the account name in one
-  // query — `account:accounts!inner(id,name)` is Supabase's
-  // explicit-join syntax. `!inner` so a NULL account_id (which
-  // shouldn't exist) yields no row and trips the guard below
-  // rather than silently returning a half-populated profile.
-  const { data, error } = await supabase
+  const db = createClient();
+
+  const { data, error } = await db
     .from("profiles")
-    .select("account_id, account_role, account:accounts!inner(id, name)")
-    .eq("user_id", user.id)
-    .maybeSingle();
+    .select("account_id, account_role")
+    .eq("user_id", userId)
+    .single();
 
   if (error) {
     console.error("[getCurrentAccount] profile fetch error:", error);
     throw new ForbiddenError("Could not load account context");
   }
-  if (!data || !data.account_id || !data.account_role || !data.account) {
-    // Pre-migration profile, or a manual insert that skipped the
-    // signup trigger. The user is authenticated but the app has
-    // no way to scope their queries — treat as forbidden.
+  if (!data || !data.account_id || !data.account_role) {
     throw new ForbiddenError("Profile is not linked to an account");
   }
   if (!isAccountRole(data.account_role)) {
-    // The DB enum should make this impossible, but a future
-    // migration that broadens the enum without updating TS would
-    // hit this — surface it rather than silently widening.
     throw new ForbiddenError(`Unknown account role: ${data.account_role}`);
   }
 
-  // Supabase's typed client returns related rows as an array even
-  // for `!inner` single-record joins; normalise to a single object.
-  const accountRow = Array.isArray(data.account) ? data.account[0] : data.account;
+  const accountData = await db
+    .from("accounts")
+    .select("id, name")
+    .eq("id", data.account_id)
+    .single();
+
+  if (accountData.error || !accountData.data) {
+    throw new ForbiddenError("Could not load account");
+  }
 
   return {
-    supabase,
-    userId: user.id,
+    userId,
     accountId: data.account_id,
     role: data.account_role,
-    account: { id: accountRow.id, name: accountRow.name },
+    account: { id: accountData.data.id, name: accountData.data.name },
   };
 }
 

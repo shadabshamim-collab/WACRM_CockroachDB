@@ -15,9 +15,10 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
-import type { PostgrestError } from "@supabase/supabase-js";
+import type { PostgrestError } from "@/lib/cockroachdb/server";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { query } from "@/lib/cockroachdb/server";
 import { isAccountRole } from "@/lib/auth/roles";
 import {
   checkRateLimit,
@@ -81,12 +82,15 @@ export async function PATCH(
       );
     }
 
-    const { error } = await ctx.supabase.rpc("set_member_role", {
-      p_user_id: userId,
-      p_new_role: role,
-    });
-
-    if (error) return rpcErrorToResponse(error);
+    try {
+      await query("SELECT set_member_role($1, $2)", [userId, role]);
+    } catch (error) {
+      console.error("[PATCH /api/account/members] RPC error:", error);
+      return NextResponse.json(
+        { error: "Failed to update member role" },
+        { status: 500 },
+      );
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {
@@ -109,13 +113,17 @@ export async function DELETE(
 
     const { userId } = await params;
 
-    const { data, error } = await ctx.supabase.rpc("remove_account_member", {
-      p_user_id: userId,
-    });
-
-    if (error) return rpcErrorToResponse(error);
-
-    return NextResponse.json({ ok: true, newPersonalAccountId: data });
+    try {
+      const result = await query("SELECT remove_account_member($1) AS new_personal_account_id", [userId]);
+      const newPersonalAccountId = result.rows[0]?.new_personal_account_id || null;
+      return NextResponse.json({ ok: true, newPersonalAccountId });
+    } catch (error) {
+      console.error("[DELETE /api/account/members] RPC error:", error);
+      return NextResponse.json(
+        { error: "Failed to remove member" },
+        { status: 500 },
+      );
+    }
   } catch (err) {
     return toErrorResponse(err);
   }

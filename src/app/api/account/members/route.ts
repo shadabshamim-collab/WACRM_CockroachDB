@@ -15,6 +15,7 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { createClient } from "@/lib/cockroachdb/server";
 import { canManageMembers, isAccountRole } from "@/lib/auth/roles";
 import type { AccountMember } from "@/types";
 
@@ -33,11 +34,13 @@ export async function GET() {
 
     // RLS on profiles allows reading any row whose account matches
     // the caller's, so this query is naturally account-scoped.
-    const { data, error } = await ctx.supabase
+    const db = createClient();
+    const { data, error } = await db
       .from("profiles")
       .select("user_id, full_name, email, avatar_url, account_role, created_at")
       .eq("account_id", ctx.accountId)
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true })
+      .select_all();
 
     if (error) {
       console.error("[GET /api/account/members] fetch error:", error);

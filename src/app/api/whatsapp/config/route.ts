@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/cockroachdb/server'
 import {
   registerPhoneNumber,
   subscribeWabaToApp,
@@ -19,32 +18,21 @@ import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
  * should treat that the same as "not connected".
  */
 async function resolveAccountId(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  db: Awaited<ReturnType<typeof createClient>>,
   userId: string,
 ): Promise<string | null> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('profiles')
     .select('account_id')
     .eq('user_id', userId)
-    .maybeSingle()
+    .single()
   if (error || !data?.account_id) return null
   return data.account_id as string
 }
 
-// Lazy-initialised service-role client. We need it to detect a
-// phone_number_id already claimed by a *different* user — under RLS,
-// the user's own session can't see other users' rows, so the conflict
-// would be invisible without the service role.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _adminClient: any = null
-function supabaseAdmin() {
-  if (!_adminClient) {
-    _adminClient = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-  }
-  return _adminClient
+// CockroachDB client for queries (no service-role needed, no RLS)
+function getDb() {
+  return createClient()
 }
 
 /**

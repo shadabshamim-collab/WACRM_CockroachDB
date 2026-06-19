@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
 import { Broadcast } from '@/types';
 import { Button } from '@/components/ui/button';
 import {
@@ -68,13 +67,9 @@ export default function BroadcastsPage() {
 
   async function fetchBroadcasts() {
     try {
-      const supabase = createClient();
-      const { data, error: fetchError } = await supabase
-        .from('broadcasts')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (fetchError) throw fetchError;
+      const res = await fetch('/api/broadcasts/list');
+      if (!res.ok) throw new Error('Failed to load broadcasts');
+      const { broadcasts: data } = await res.json();
       setBroadcasts(data ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load broadcasts');

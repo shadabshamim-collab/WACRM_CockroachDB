@@ -18,7 +18,7 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
-import type { PostgrestError } from "@supabase/supabase-js";
+import type { PostgrestError } from "@/lib/cockroachdb/server";
 
 import { hashInviteToken } from "@/lib/auth/invitations";
 import {
@@ -26,7 +26,7 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from "@/lib/rate-limit";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/cockroachdb/server";
 
 function getClientIp(request: Request): string {
   const xff = request.headers.get("x-forwarded-for");

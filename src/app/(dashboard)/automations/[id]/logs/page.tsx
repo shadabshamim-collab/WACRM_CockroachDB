@@ -11,7 +11,7 @@ import {
   ChevronRight,
 } from "lucide-react"
 
-import { createClient } from "@/lib/supabase/client"
+import { createClient } from "@/lib/cockroachdb/server"
 import type {
   Automation,
   AutomationLog,

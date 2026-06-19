@@ -1,29 +1,26 @@
-import { createServerClient } from '@supabase/ssr'
+import jwt from 'jsonwebtoken'
 import { NextResponse, type NextRequest } from 'next/server'
 
+function getUserFromToken(request: NextRequest) {
+  try {
+    const authHeader = request.headers.get('authorization')
+    const cookieToken = request.cookies.get('auth_token')?.value
+
+    const token = authHeader?.startsWith('Bearer ')
+      ? authHeader.substring(7)
+      : cookieToken
+
+    if (!token) return null
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || '') as { userId: string }
+    return { id: decoded.userId }
+  } catch {
+    return null
+  }
+}
+
 export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request })
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
-
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = getUserFromToken(request)
 
   // Auth pages - redirect to dashboard if already logged in.
   // Exception: when an invite token is in the query string we
@@ -66,7 +63,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  return supabaseResponse
+  return NextResponse.next({ request })
 }
 
 export const config = {

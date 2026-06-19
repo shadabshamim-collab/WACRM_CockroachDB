@@ -16,6 +16,7 @@
 import { NextResponse } from "next/server";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { createClient } from "@/lib/cockroachdb/server";
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -43,10 +44,11 @@ export async function DELETE(
     // filter would be redundant; omitting it surfaces a
     // cross-account attempt as a silent 0-row delete (which is
     // exactly what we want for a revocation endpoint).
-    const { error, count } = await ctx.supabase
+    const db = createClient();
+    const { data, error } = await db
       .from("account_invitations")
-      .delete({ count: "exact" })
-      .eq("id", id);
+      .eq("id", id)
+      .delete();
 
     if (error) {
       console.error("[DELETE /api/account/invitations/[id]] error:", error);
@@ -56,7 +58,7 @@ export async function DELETE(
       );
     }
 
-    if (count === 0) {
+    if (!data || data.length === 0) {
       // Either the id doesn't exist or RLS hid it (different
       // account). 404 either way — surfacing "exists but not
       // yours" would leak existence.
