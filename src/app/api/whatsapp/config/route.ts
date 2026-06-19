@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/cockroachdb/server'
+import { getCurrentAccount, toErrorResponse } from '@/lib/auth/account'
 import {
   registerPhoneNumber,
   subscribeWabaToApp,
@@ -18,7 +19,7 @@ import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
  * should treat that the same as "not connected".
  */
 async function resolveAccountId(
-  db: Awaited<ReturnType<typeof createClient>>,
+  db: ReturnType<typeof createClient>,
   userId: string,
 ): Promise<string | null> {
   const { data, error } = await db
@@ -50,33 +51,13 @@ function getDb() {
  */
 export async function GET() {
   try {
-    const supabase = await createClient()
+    const ctx = await getCurrentAccount()
+    const db = getDb()
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
-      return NextResponse.json(
-        {
-          connected: false,
-          reason: 'no_account',
-          message: 'Your profile is not linked to an account.',
-        },
-        { status: 200 },
-      )
-    }
-
-    const { data: config, error: configError } = await supabase
+    const { data: config, error: configError } = await db
       .from('whatsapp_config')
       .select('phone_number_id, access_token, status')
-      .eq('account_id', accountId)
+      .eq('account_id', ctx.accountId)
       .maybeSingle()
 
     if (configError) {
@@ -153,12 +134,12 @@ export async function GET() {
  */
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
+    const db = createClient()
 
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser()
+    } = db.auth.getUser()
 
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -428,12 +409,12 @@ export async function POST(request: Request) {
  */
 export async function DELETE() {
   try {
-    const supabase = await createClient()
+    const db = createClient()
 
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser()
+    } = db.auth.getUser()
 
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
