@@ -71,6 +71,7 @@ function SignupPageInner() {
           password,
           inviteToken,
         }),
+        credentials: 'include',
       })
 
       const data = await response.json()
