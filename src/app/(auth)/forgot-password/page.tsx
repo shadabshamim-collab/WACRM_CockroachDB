@@ -27,18 +27,27 @@ export default function ForgotPasswordPage() {
     setError(null);
     setLoading(true);
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
-    });
+    try {
+      const response = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
 
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-      return;
+      const data = await response.json()
+
+      if (!response.ok) {
+        setError(data.error || 'Password reset request failed')
+        setLoading(false)
+        return
+      }
+
+      setSuccess(true)
+      setLoading(false)
+    } catch (err) {
+      setError('An error occurred during password reset')
+      setLoading(false)
     }
-
-    setSuccess(true);
-    setLoading(false);
   };
 
   if (success) {

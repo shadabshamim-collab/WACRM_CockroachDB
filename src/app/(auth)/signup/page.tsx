@@ -60,33 +60,32 @@ function SignupPageInner() {
 
     setLoading(true);
 
-    // If we have an invite token, point Supabase's verification
-    // email back at the join page so the user can accept after
-    // verifying. Without a token, Supabase uses its default
-    // redirect (the app root).
-    const emailRedirectTo = inviteToken
-      ? `${window.location.origin}/join/${encodeURIComponent(inviteToken)}`
-      : undefined;
+    try {
+      const response = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName,
+          email,
+          password,
+          inviteToken,
+        }),
+      })
 
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-        },
-        ...(emailRedirectTo ? { emailRedirectTo } : {}),
-      },
-    });
+      const data = await response.json()
 
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-      return;
+      if (!response.ok) {
+        setError(data.error || 'Signup failed')
+        setLoading(false)
+        return
+      }
+
+      setSuccess(true)
+      setLoading(false)
+    } catch (err) {
+      setError('An error occurred during signup')
+      setLoading(false)
     }
-
-    setSuccess(true);
-    setLoading(false);
   };
 
   if (success) {
